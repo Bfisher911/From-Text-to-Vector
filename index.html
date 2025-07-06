@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>From Text to Vector: Chunking & Vector Stores Explained</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- three.js for 3D visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Custom Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles for a polished look and feel */
+        body {
+            font-family: 'Inter', sans-serif;
+            scroll-behavior: smooth;
+        }
+
+        /* Custom styles for the slider thumb */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #4f46e5; /* Indigo 600 */
+            cursor: pointer;
+            border-radius: 50%;
+            border: 4px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            margin-top: -8px; /* Center thumb on the track */
+        }
+
+        input[type=range]::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: #4f46e5;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 4px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+
+        /* Tooltip and Popup styles */
+        .tooltip-term {
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 3px;
+            color: #4f46e5; /* Indigo 600 */
+            font-weight: 600;
+        }
+
+        .popup, .store-tooltip {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+
+        /* Animation for text chunks */
+        .text-chunk {
+            transition: background-color 0.5s ease, color 0.5s ease;
+            padding: 2px 0;
+            border-radius: 3px;
+        }
+        
+        /* Canvas container for responsiveness */
+        #embedding-canvas-container {
+            position: relative;
+            width: 100%;
+            padding-top: 100%; /* 1:1 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+        }
+        
+        #embedding-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">From Text to Vector</h1>
+            <p class="text-lg md:text-xl text-gray-600 mt-2">Chunking & Vector Stores Explained</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Left Column: Controls and Text -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <!-- Step 1: Chunking -->
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">1. Chunking</h2>
+                    <label for="chunk-size-slider" class="block font-semibold text-gray-700 mb-2">Chunk Size: <span id="chunk-size-value" class="font-bold text-indigo-600">200</span> tokens</label>
+                    <input id="chunk-size-slider" type="range" min="50" max="1000" value="200" step="10" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" aria-label="Chunk size slider">
+                    <div class="flex justify-between text-sm text-gray-500 mt-1">
+                        <span>50</span>
+                        <span>1000</span>
+                    </div>
+                </div>
+
+                <!-- Text Preview -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-700 mb-2">Text Preview</h3>
+                    <div id="text-preview" class="h-64 overflow-y-auto p-4 bg-gray-100 rounded-lg border border-gray-300 text-sm leading-relaxed">
+                        <!-- Text will be dynamically inserted here -->
+                    </div>
+                    <div class="mt-3 text-right">
+                        <p class="text-gray-600">Chunks Created: <span id="chunk-count" class="font-bold text-indigo-600">0</span></p>
+                        <p class="text-gray-600">Estimated Cost: <span id="token-cost" class="font-bold text-indigo-600">$0.0000</span></p>
+                    </div>
+                </div>
+
+                <!-- Step 2: Embedding -->
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">2. Embedding</h2>
+                    <p class="text-gray-600 mb-4">Click to convert each <span class="tooltip-term" data-term="chunk">chunk</span> into a numerical <span class="tooltip-term" data-term="embedding">embedding</span> and visualize it in 3D space.</p>
+                    <button id="embed-button" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 transform hover:scale-105" aria-label="Embed text chunks">
+                        Embed Chunks!
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Visualization and Search -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 flex flex-col">
+                <!-- Step 3: Vector Store -->
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">3. Vector Store</h2>
+                    <p class="text-gray-600 mb-4">Choose a vector store to house your embeddings.</p>
+                    <div class="flex flex-wrap gap-4 items-center relative">
+                        <div class="flex items-center">
+                            <input type="radio" id="faiss" name="vector-store" value="FAISS" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500" checked>
+                            <label for="faiss" class="ml-2 block text-sm font-medium text-gray-700">FAISS</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="radio" id="chroma" name="vector-store" value="Chroma" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                            <label for="chroma" class="ml-2 block text-sm font-medium text-gray-700">Chroma</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="radio" id="pinecone" name="vector-store" value="Pinecone" class="h-4 w-4 text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                            <label for="pinecone" class="ml-2 block text-sm font-medium text-gray-700">Pinecone</label>
+                        </div>
+                        <!-- Tooltip for Vector Store Info -->
+                        <div id="store-tooltip" class="store-tooltip absolute left-0 top-10 bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 pointer-events-none transform translate-y-2">
+                            <!-- Tooltip content will be dynamic -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3D Canvas -->
+                <div id="embedding-canvas-container" class="flex-grow bg-gray-900 rounded-lg overflow-hidden relative mb-6">
+                    <canvas id="embedding-canvas"></canvas>
+                    <div id="canvas-placeholder" class="absolute inset-0 flex items-center justify-center text-gray-400">
+                        <p class="text-center">Click "Embed Chunks!" to visualize vectors</p>
+                    </div>
+                </div>
+
+                <!-- Step 4: Similarity Search -->
+                <div>
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">4. Similarity Search</h2>
+                    <p class="text-gray-600 mb-4">Query the vector store to find the most similar chunks based on <span class="tooltip-term" data-term="cosine">cosine similarity</span>.</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="search-query" placeholder="e.g., 'What is deep learning?'" class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" aria-label="Similarity search query">
+                        <button id="search-button" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors" aria-label="Perform similarity search">Search</button>
+                    </div>
+                    <div id="search-results" class="mt-4 text-sm">
+                        <!-- Search results will appear here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Popup for Definitions -->
+    <div id="popup-container" class="popup fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 opacity-0 pointer-events-none">
+        <div id="popup-content" class="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full transform scale-95">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="popup-title" class="text-xl font-bold"></h3>
+                <button id="popup-close" class="text-gray-500 hover:text-gray-800" aria-label="Close definition popup">&times;</button>
+            </div>
+            <p id="popup-text" class="text-gray-600"></p>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- DOM ELEMENT REFERENCES ---
+    const slider = document.getElementById('chunk-size-slider');
+    const sliderValue = document.getElementById('chunk-size-value');
+    const textPreview = document.getElementById('text-preview');
+    const chunkCountEl = document.getElementById('chunk-count');
+    const tokenCostEl = document.getElementById('token-cost');
+    const embedButton = document.getElementById('embed-button');
+    const searchQuery = document.getElementById('search-query');
+    const searchButton = document.getElementById('search-button');
+    const searchResults = document.getElementById('search-results');
+    const canvasContainer = document.getElementById('embedding-canvas-container');
+    const canvas = document.getElementById('embedding-canvas');
+    const canvasPlaceholder = document.getElementById('canvas-placeholder');
+    const vectorStoreRadios = document.querySelectorAll('input[name="vector-store"]');
+    const storeTooltip = document.getElementById('store-tooltip');
+    
+    // Popup elements
+    const popupContainer = document.getElementById('popup-container');
+    const popupContent = document.getElementById('popup-content');
+    const popupTitle = document.getElementById('popup-title');
+    const popupText = document.getElementById('popup-text');
+    const popupClose = document.getElementById('popup-close');
+    const tooltipTerms = document.querySelectorAll('.tooltip-term');
+
+    // --- MOCK DATA & CONFIGURATION ---
+    // Instructors can easily change this sample text.
+    const sampleText = `Artificial intelligence (AI) is intelligence demonstrated by machines, as opposed to the natural intelligence displayed by humans and other animals. AI research has been defined as the field of study of intelligent agents, which refers to any system that perceives its environment and takes actions that maximize its chance of successfully achieving its goals. The term "artificial intelligence" had previously been used to describe machines that mimic and display "human" cognitive skills that are associated with the human mind, such as "learning" and "problem-solving". This definition has since been rejected by major AI researchers who now describe AI in terms of rationality and acting rationally, which does not limit AI to human-like intelligence. AI applications include advanced web search engines (e.g., Google Search), recommendation systems (used by YouTube, Amazon and Netflix), understanding human speech (such as Siri and Alexa), self-driving cars (e.g., Waymo), generative or creative tools (e.g., ChatGPT and AI art), and competing at the highest level in strategic games (such as chess and Go). As machines become increasingly capable, tasks considered to require "intelligence" are often removed from the definition of AI, a phenomenon known as the AI effect. For instance, optical character recognition is frequently excluded from things considered to be AI, having become a routine technology. Machine learning is a central part of AI research. It is the study of computer algorithms that can improve automatically through experience and by the use of data. It is seen as a part of artificial intelligence. Machine learning algorithms build a model based on sample data, known as training data, in order to make predictions or decisions without being explicitly programmed to do so. Machine learning algorithms are used in a wide variety of applications, such as in medicine, email filtering, speech recognition, and computer vision, where it is difficult or unfeasible to develop conventional algorithms to perform the needed tasks. Deep learning is a subset of machine learning where artificial neural networks, algorithms inspired by the human brain, learn from large amounts of data. Similarly to how we learn from experience, the deep learning algorithm would perform a task repeatedly, each time tweaking it a little to improve the outcome.`;
+    
+    // A simplified "tokenization" by splitting by space. Real tokenization is more complex.
+    const tokens = sampleText.split(/\s+/);
+    
+    // Cost per 1000 tokens (example rate)
+    const COST_PER_1000_TOKENS = 0.0001; 
+    
+    // Definitions for popups
+    const definitions = {
+        chunk: {
+            title: 'Chunk',
+            text: 'A "chunk" is a smaller, manageable piece of a larger text. Large documents are broken down into chunks before being converted into embeddings. This helps the AI model focus on specific contexts and is more efficient for processing.'
+        },
+        embedding: {
+            title: 'Embedding',
+            text: 'An embedding is a numerical representation (a vector) of a piece of text. AI models create these vectors to capture the semantic meaning of the text. Words and sentences with similar meanings will have embeddings that are "close" to each other in vector space.'
+        },
+        cosine: {
+            title: 'Cosine Similarity',
+            text: 'Cosine similarity is a metric used to measure how similar two vectors are. It calculates the cosine of the angle between them. A value of 1 means the vectors are identical, 0 means they are unrelated, and -1 means they are opposite.'
+        }
+    };
+    
+    // Vector store information for tooltips
+    const storeInfo = {
+        FAISS: 'Free, open-source library by Facebook AI. Runs locally. Excellent for fast, memory-efficient similarity search.',
+        Chroma: 'Open-source, developer-focused vector database. Easy to get started with and offers a hosted version.',
+        Pinecone: 'Managed, cloud-native vector database. Offers high performance and scalability for enterprise-level applications.'
+    };
+
+    let chunks = [];
+    let chunkVectors = []; // Stores { position, originalColor, chunkText }
+
+    // --- THREE.JS SCENE SETUP ---
+    let scene, camera, renderer, points;
+    
+    function initThreeJS() {
+        scene = new THREE.Scene();
+        
+        // Use perspective camera for a 3D feel
+        camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
+        camera.position.z = 15;
+
+        renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        // Handle window resizing
+        window.addEventListener('resize', onWindowResize, false);
+        
+        // Mouse controls for rotating the scene
+        let isMouseDown = false;
+        let lastMouseX = null;
+        let lastMouseY = null;
+
+        canvas.addEventListener('mousedown', (e) => { isMouseDown = true; });
+        canvas.addEventListener('mouseup', () => { isMouseDown = false; lastMouseX = null; lastMouseY = null; });
+        canvas.addEventListener('mouseleave', () => { isMouseDown = false; lastMouseX = null; lastMouseY = null; });
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isMouseDown || !points) return;
+            const deltaX = e.clientX - (lastMouseX || e.clientX);
+            const deltaY = e.clientY - (lastMouseY || e.clientY);
+            points.rotation.y += deltaX * 0.005;
+            points.rotation.x += deltaY * 0.005;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        animate();
+    }
+
+    function onWindowResize() {
+        // Ensure canvas maintains aspect ratio and fills container
+        const width = canvasContainer.clientWidth;
+        const height = canvasContainer.clientHeight;
+        
+        if (width > 0 && height > 0) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        // Add a slow rotation for a dynamic feel
+        if (points) {
+            points.rotation.y += 0.0005;
+        }
+        renderer.render(scene, camera);
+    }
+
+    // --- CORE LOGIC FUNCTIONS ---
+
+    /**
+     * Updates the text preview with highlighted chunks.
+     */
+    function updateTextPreview() {
+        const chunkSize = parseInt(slider.value, 10);
+        sliderValue.textContent = chunkSize;
+        
+        chunks = [];
+        let currentChunk = [];
+        for (let i = 0; i < tokens.length; i++) {
+            currentChunk.push(tokens[i]);
+            if (currentChunk.length >= chunkSize || i === tokens.length - 1) {
+                chunks.push(currentChunk.join(' '));
+                currentChunk = [];
+            }
+        }
+
+        // Color palette for chunks
+        const colors = ['bg-indigo-100', 'bg-blue-100', 'bg-green-100', 'bg-yellow-100', 'bg-pink-100'];
+        
+        let html = '';
+        let tokenCounter = 0;
+        for (let i = 0; i < chunks.length; i++) {
+            const chunkTokens = chunks[i].split(/\s+/);
+            html += `<span class="text-chunk ${colors[i % colors.length]}">`;
+            for (let j = 0; j < chunkTokens.length; j++) {
+                html += chunkTokens[j] + ' ';
+                tokenCounter++;
+            }
+            html += `</span>`;
+        }
+        
+        textPreview.innerHTML = html;
+        
+        // Update stats
+        chunkCountEl.textContent = chunks.length;
+        const cost = (tokenCounter / 1000) * COST_PER_1000_TOKENS;
+        tokenCostEl.textContent = `$${cost.toFixed(6)}`;
+    }
+
+    /**
+     * Animates chunks into 3D points in the scatterplot.
+     */
+    function embedChunks() {
+        if (chunks.length === 0) {
+            alert('Please generate chunks first by moving the slider.');
+            return;
+        }
+
+        canvasPlaceholder.style.display = 'none';
+
+        // Clear previous points if they exist
+        if (points) {
+            scene.remove(points);
+            points.geometry.dispose();
+            points.material.dispose();
+        }
+
+        chunkVectors = [];
+        const geometry = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        
+        // Instructors can change these colors
+        const baseColor = new THREE.Color(0x4f46e5); // Indigo
+        const highlightColor = new THREE.Color(0x10b981); // Emerald
+        const defaultColor = new THREE.Color(0xffffff); // White
+
+        for (let i = 0; i < chunks.length; i++) {
+            // Generate a random position for each vector in 3D space
+            const x = (Math.random() - 0.5) * 20;
+            const y = (Math.random() - 0.5) * 20;
+            const z = (Math.random() - 0.5) * 20;
+            positions.push(x, y, z);
+            
+            colors.push(defaultColor.r, defaultColor.g, defaultColor.b);
+
+            chunkVectors.push({
+                position: new THREE.Vector3(x, y, z),
+                originalColor: defaultColor.clone(),
+                highlightColor: highlightColor.clone(),
+                chunkText: `Chunk ${i + 1}: "${chunks[i].substring(0, 50)}..."`
+            });
+        }
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.5,
+            vertexColors: true,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.9,
+        });
+
+        points = new THREE.Points(geometry, material);
+        scene.add(points);
+
+        // Simple "morph" animation - scale points up
+        points.scale.set(0.1, 0.1, 0.1);
+        let scale = 0.1;
+        function scaleUp() {
+            scale += 0.05;
+            if (scale <= 1) {
+                points.scale.set(scale, scale, scale);
+                requestAnimationFrame(scaleUp);
+            } else {
+                points.scale.set(1, 1, 1);
+            }
+        }
+        scaleUp();
+    }
+
+    /**
+     * Simulates a similarity search and highlights nearest neighbors.
+     */
+    function performSearch() {
+        if (chunkVectors.length === 0) {
+            searchResults.innerHTML = `<p class="text-red-500">Please embed chunks before searching.</p>`;
+            return;
+        }
+        if (!searchQuery.value) {
+            searchResults.innerHTML = `<p class="text-red-500">Please enter a search query.</p>`;
+            return;
+        }
+
+        // Reset all points to their original color
+        const colors = points.geometry.attributes.color.array;
+        for (let i = 0; i < chunkVectors.length; i++) {
+            const { originalColor } = chunkVectors[i];
+            colors[i * 3] = originalColor.r;
+            colors[i * 3 + 1] = originalColor.g;
+            colors[i * 3 + 2] = originalColor.b;
+        }
+
+        // --- MOCK SEARCH LOGIC ---
+        // In a real app, this would be an API call to a vector store.
+        // Here, we simulate by picking random vectors and assigning scores.
+        const k = 3; // Number of nearest neighbors to find
+        const results = [];
+        const usedIndices = new Set();
+        
+        while(results.length < k && results.length < chunkVectors.length) {
+            const randomIndex = Math.floor(Math.random() * chunkVectors.length);
+            if (!usedIndices.has(randomIndex)) {
+                usedIndices.add(randomIndex);
+                const randomScore = 0.85 + Math.random() * 0.14; // High similarity score
+                results.push({
+                    index: randomIndex,
+                    score: randomScore
+                });
+            }
+        }
+        
+        // Sort by score descending
+        results.sort((a, b) => b.score - a.score);
+
+        // Highlight the top k results and build HTML output
+        let html = '<h4 class="font-semibold mb-2 text-gray-800">Top Results:</h4><ul class="space-y-2">';
+        results.forEach((result, i) => {
+            const { index, score } = result;
+            const vector = chunkVectors[index];
+            const { highlightColor } = vector;
+            
+            // Update the color of the highlighted point in the geometry
+            colors[index * 3] = highlightColor.r;
+            colors[index * 3 + 1] = highlightColor.g;
+            colors[index * 3 + 2] = highlightColor.b;
+
+            html += `
+                <li class="p-2 rounded-md ${i === 0 ? 'bg-green-100 border border-green-300' : 'bg-gray-100'}">
+                    <p class="font-semibold text-green-800">${vector.chunkText}</p>
+                    <p class="text-xs text-gray-600">Cosine Similarity: <span class="font-bold">${score.toFixed(4)}</span></p>
+                </li>
+            `;
+        });
+        html += '</ul>';
+        
+        searchResults.innerHTML = html;
+        points.geometry.attributes.color.needsUpdate = true; // IMPORTANT: tells three.js to update colors
+    }
+    
+    /**
+     * Shows the definition popup.
+     */
+    function showPopup(termKey) {
+        const termData = definitions[termKey];
+        if (!termData) return;
+        
+        popupTitle.textContent = termData.title;
+        popupText.textContent = termData.text;
+        
+        popupContainer.classList.remove('opacity-0', 'pointer-events-none');
+        popupContent.classList.remove('scale-95');
+        popupContainer.classList.add('opacity-100');
+        popupContent.classList.add('scale-100');
+    }
+
+    /**
+     * Hides the definition popup.
+     */
+    function hidePopup() {
+        popupContainer.classList.add('opacity-0');
+        popupContent.classList.add('scale-95');
+        setTimeout(() => {
+            popupContainer.classList.add('pointer-events-none');
+        }, 300); // Match transition duration
+    }
+    
+    /**
+     * Updates and shows the vector store tooltip.
+     */
+    function updateStoreTooltip() {
+        const selectedStore = document.querySelector('input[name="vector-store"]:checked').value;
+        storeTooltip.textContent = storeInfo[selectedStore];
+        storeTooltip.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+        storeTooltip.classList.add('opacity-100');
+    }
+
+
+    // --- EVENT LISTENERS ---
+    slider.addEventListener('input', updateTextPreview);
+    embedButton.addEventListener('click', embedChunks);
+    searchButton.addEventListener('click', performSearch);
+    searchQuery.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            performSearch();
+        }
+    });
+    
+    // Vector store radio buttons
+    vectorStoreRadios.forEach(radio => {
+        radio.addEventListener('change', updateStoreTooltip);
+        // Show tooltip on focus for accessibility
+        radio.addEventListener('focus', updateStoreTooltip);
+        radio.addEventListener('blur', () => {
+             storeTooltip.classList.add('opacity-0', 'translate-y-2');
+             storeTooltip.classList.remove('opacity-100');
+        });
+    });
+
+    // Popup listeners
+    tooltipTerms.forEach(term => {
+        term.addEventListener('click', (e) => {
+            e.preventDefault();
+            showPopup(e.target.dataset.term);
+        });
+    });
+    popupClose.addEventListener('click', hidePopup);
+    popupContainer.addEventListener('click', (e) => {
+        if (e.target === popupContainer) {
+            hidePopup();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            hidePopup();
+        }
+    });
+
+    // --- INITIALIZATION ---
+    updateTextPreview();
+    initThreeJS();
+    onWindowResize(); // Call once to set initial size correctly
+});
+</script>
+
+</body>
+</html>
